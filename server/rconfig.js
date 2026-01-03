@@ -49,3 +49,9 @@ export default class RCONfig {
     return this.config;
   }
 }
+
+export async function configToObject(config) {
+    let rconfig = new RCONfig();
+    await rconfig.parseConfig(config);
+    return rconfig.config;
+}

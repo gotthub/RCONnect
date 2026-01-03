@@ -108,7 +108,7 @@ spec:
       containers:
         - name: web
           image: ghcr.io/gotthub/rconnect-web:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - name: web
               containerPort: 3000
@@ -142,7 +142,7 @@ spec:
 
         - name: api
           image: ghcr.io/gotthub/rconnect-api:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - name: api
               containerPort: 6304
