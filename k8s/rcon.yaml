@@ -18,6 +18,25 @@ spec:
       port: 6304
       targetPort: api
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rconnect-config
+  namespace: minecraft
+data:
+  # server 1
+  server1_name: "bohnsdorfcraft-1"
+  server1_ip: "bohnsdorfcraft-1-minecraft.minecraft.svc.cluster.local"
+  server1_port: "25575"
+
+  # server 2
+  server2_name: "bohnsdorfcraft-ob"
+  server2_ip: "bohnsdorfcraft-ob-minecraft.minecraft.svc.cluster.local"
+  server2_port: "25576"
+
+  # default selection
+  default_selected: "login-bohnsdorfcraft-1.rconfig"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -33,6 +52,59 @@ spec:
       labels:
         app: rconnect
     spec:
+      volumes:
+        - name: rconnect-configuration
+          emptyDir: {}
+
+      initContainers:
+        - name: generate-rconfig
+          image: busybox:1.37
+          securityContext:
+            runAsUser: 0
+          envFrom:
+            - configMapRef:
+                name: rconnect-config
+          env:
+            - name: RCON_PASSWORD_SERVER1
+              valueFrom:
+                secretKeyRef:
+                  name: bohnsdorfcraft-1-minecraft-rcon
+                  key: rcon-password
+            - name: RCON_PASSWORD_SERVER2
+              valueFrom:
+                secretKeyRef:
+                  name: bohnsdorfcraft-ob-minecraft-rcon
+                  key: rcon-password
+          volumeMounts:
+            - name: rconnect-configuration
+              mountPath: /out
+          command: ["sh", "-lc"]
+          args:
+            - |
+              set -eu
+
+              cat > /out/login-${server1_name}.rconfig <<EOF
+              # Login Info for RCONnect
+              [ip; ${server1_ip}]
+              [port; ${server1_port}]
+              [password; ${RCON_PASSWORD_SERVER1}]
+              EOF
+
+              cat > /out/login-${server2_name}.rconfig <<EOF
+              # Login Info for RCONnect
+              [ip; ${server2_ip}]
+              [port; ${server2_port}]
+              [password; ${RCON_PASSWORD_SERVER2}]
+              EOF
+
+              # selector
+              cat > /out/config.rconfig <<EOF
+              # You can select config files here.
+              [selected; ${default_selected}]
+              EOF
+
+              ls -la /out
+
       containers:
         - name: web
           image: ghcr.io/gotthub/rconnect-web:latest
@@ -40,9 +112,14 @@ spec:
           ports:
             - name: web
               containerPort: 3000
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
           env:
             # Helpful default so the UI can reach the backend in the same Pod
             # If the UI does not support this, ignore it; users can still enter the URL manually.
+            - name: NEXT_TELEMETRY_DISABLED
+              value: "1"
             - name: RCONNECT_BACKEND_URL
               value: "http://127.0.0.1:6304"
           readinessProbe:
@@ -69,22 +146,17 @@ spec:
           ports:
             - name: api
               containerPort: 6304
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
           env:
             # If server/index.js supports PORT, set it here. Otherwise remove.
             - name: PORT
               value: "6304"
-
-            # If you later adapt backend to read these automatically:
-            # - name: RCON_HOST
-            #   value: "bohnsdorfcraft-1-minecraft.minecraft.svc.cluster.local"
-            # - name: RCON_PORT
-            #   value: "25575"
-            # - name: RCON_PASSWORD
-            #   valueFrom:
-            #     secretKeyRef:
-            #       name: rconnect-secrets
-            #       key: rcon_password
-
+          volumeMounts:
+              - name: rconnect-configuration
+                mountPath: /app/configuration
+                readOnly: true
           readinessProbe:
             tcpSocket:
               port: api
