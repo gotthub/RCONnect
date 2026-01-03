@@ -1,17 +1,4 @@
 apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: rconnect-data
-  namespace: minecraft
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  # storageClassName: <your-storage-class>   # optionally pin your SC
----
-apiVersion: v1
 kind: Service
 metadata:
   name: rcon
@@ -28,7 +15,7 @@ spec:
       targetPort: web
     # Optional: expose backend internally too (handy for debugging/automation)
     - name: api
-      port: 3001
+      port: 6304
       targetPort: api
 ---
 apiVersion: apps/v1
@@ -46,11 +33,9 @@ spec:
       labels:
         app: rconnect
     spec:
-      securityContext:
-        fsGroup: 10001
       containers:
         - name: web
-          image: <registry>/rconnect-web:latest
+          image: ghcr.io/gotthub/rconnect-web:latest
           imagePullPolicy: IfNotPresent
           ports:
             - name: web
@@ -59,7 +44,7 @@ spec:
             # Helpful default so the UI can reach the backend in the same Pod
             # If the UI does not support this, ignore it; users can still enter the URL manually.
             - name: RCONNECT_BACKEND_URL
-              value: "http://127.0.0.1:3001"
+              value: "http://127.0.0.1:6304"
           readinessProbe:
             tcpSocket:
               port: web
@@ -79,15 +64,15 @@ spec:
               memory: 512Mi
 
         - name: api
-          image: <registry>/rconnect-api:latest
+          image: ghcr.io/gotthub/rconnect-api:latest
           imagePullPolicy: IfNotPresent
           ports:
             - name: api
-              containerPort: 3001
+              containerPort: 6304
           env:
             # If server/index.js supports PORT, set it here. Otherwise remove.
             - name: PORT
-              value: "3001"
+              value: "6304"
 
             # If you later adapt backend to read these automatically:
             # - name: RCON_HOST
@@ -100,9 +85,6 @@ spec:
             #       name: rconnect-secrets
             #       key: rcon_password
 
-          volumeMounts:
-            - name: data
-              mountPath: /data
           readinessProbe:
             tcpSocket:
               port: api
@@ -120,8 +102,3 @@ spec:
             limits:
               cpu: 250m
               memory: 256Mi
-
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: rconnect-data
