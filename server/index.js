@@ -1,48 +1,70 @@
 import { Rcon } from 'rcon-client';
 import express from 'express';
 import { configToObject } from './rconfig.js';
-import fs from 'fs';
+import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import cors from 'cors';
 
 const app = express();
 app.use(cors());
 
-const config_config = await fs.readFileSync("configuration/config.rconfig", "utf-8");
+const PORT = process.env.PORT || 3001;
+
+const config_config = await readFile("configuration/config.rconfig", "utf-8");
 const config_config_obj = await configToObject(config_config);
+
 let selected = config_config_obj.selected;
-if (selected == undefined || !fs.existsSync("configuration/"+selected)) {
-    selected = "login.rconfig";
+if (!selected || !existsSync(`configuration/${selected}`)) {
+  selected = "login.rconfig";
 }
-const config_file = await fs.readFileSync("configuration/"+selected, "utf-8");
+
+const config_file = await readFile(`configuration/${selected}`, "utf-8");
 const config = await configToObject(config_file);
+
+const rconPort = Number(config.port);
+if (!Number.isFinite(rconPort)) throw new Error("Invalid RCON port in config");
+
 const client = new Rcon({
     host: config.ip,
     password: config.password,
-    port: config.port
+    port: rconPort
 });
+
 client.on('connect', () => {
     console.log("[rconnect-server] Connected with RCON server.");
 });
 client.on('authenticated', () => {
     console.log("[rconnect-server] Authenticated with RCON server.");
 });
-client.on('error', () => {
-    console.log("[rconnect-server] Error connecting to RCON server.");
+client.on('error', (err) => {
+    console.log("[rconnect-server] Error connecting to RCON server.", err);
 });
-await client.connect();
+
+// Do not crash-loop if RCON is temporarily unavailable
+client.connect().catch((err) => {
+  console.error("[rconnect-server] Initial RCON connect failed:", err);
+});
 
 let idresponse = {};
+
+app.get('/', (req, res) => {
+    res.json({ server: true, connected: client.connected });
+});
 
 client.on('response', (requestId, packet) => {
     idresponse[requestId] = packet;
 });
-app.get('/', (req, res) => {
-    res.json({ server: true, connected: client.connected });
-});
-app.get('/sendCommand', async (req, res) => {
-    let command = req.query.command;
-    let response = await client.send(command);
-    res.send({ command: command, output: response });
+
+app.get("/sendCommand", async (req, res) => {
+  const command = String(req.query.command || "");
+  if (!command) return res.status(400).json({ error: "Missing command" });
+
+  try {
+    const response = await client.send(command);
+    res.json({ command, output: response });
+  } catch (e) {
+    res.status(500).json({ error: "RCON command failed" });
+  }
 });
 
 // POST /post-inventory will give us a string[]. We need to store this, give it an ID, and return the ID.
@@ -60,6 +82,6 @@ app.get('/get-inventory', (req, res) => {
     res.status(200).send(inventories[id]);
 });
 
-app.listen(6304, () => {
-    console.log("[rconnect-server] Server started on port 6304.");
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`[rconnect-server] Server started on port ${PORT}.);
 });
