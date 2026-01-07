@@ -83,5 +83,5 @@ app.get('/get-inventory', (req, res) => {
 });
 
 app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[rconnect-server] Server started on port ${PORT}.);
+    console.log(`[rconnect-server] Server started on port ${PORT}.`);
 });
